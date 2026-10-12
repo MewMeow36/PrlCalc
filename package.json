@@ -1,0 +1,14 @@
+{
+  "name": "pearlcalc",
+  "version": "1.0.0",
+  "description": "Pearl (PRL) mining profitability dashboard for SaladCloud GPU rentals",
+  "private": true,
+  "scripts": {
+    "shot": "node screenshot.mjs"
+  },
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "playwright": "^1.64.0"
+  }
+}

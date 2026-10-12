@@ -1,0 +1,31 @@
+# local config & runtime data (never commit)
+config.json
+history.jsonl
+
+# python
+__pycache__/
+*.pyc
+
+# pyinstaller
+build/
+dist/
+*.spec
+
+# node
+node_modules/
+
+# dev artifacts
+shot*.png
+calc-shot*.png
+
+# unrelated local projects / personal mining files
+Pfortune/
+pearl-docker/
+pearlfortune-docker/
+wildrig-docker/
+pearl-gui.py
+pearl-tune.py
+prl_config.json
+deploy.yaml
+pfortune-deploy.yaml
+wildrig-deploy.yaml

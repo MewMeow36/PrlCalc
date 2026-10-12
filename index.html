@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0d13">
+<title>pearlcalc</title>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M8 1l6 6-6 6-6-6z" fill="%235b8cff"/></svg>'>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <button class="brand" id="brand" title="home"><span class="mark"></span>pearlcalc</button>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-view="dash">Dashboard</button>
+    <button class="tab" data-view="calc">Calculator</button>
+    <button class="tab" data-view="settings">Settings</button>
+  </nav>
+  <div class="spacer pywebview-drag-region" id="dragspacer"></div>
+  <div class="price num" id="price"><span class="sk"></span></div>
+  <button class="iconbtn" id="refresh" title="refresh now" aria-label="refresh now">↻</button>
+  <div class="live" id="live">connecting…</div>
+  <div class="winctl" id="winctl" hidden>
+    <button id="winMin" title="minimize" aria-label="minimize">–</button>
+    <button id="winMax" title="maximize" aria-label="maximize">☐</button>
+    <button id="winClose" class="danger" title="close" aria-label="close">✕</button>
+  </div>
+</header>
+
+<div id="alert"></div>
+
+<main id="viewDash">
+
+  <section class="band" id="band">
+    <div><div class="k">Hashrate</div><div class="v num"><span class="sk"></span></div><div class="s">pool workers</div></div>
+    <div><div class="k">Burn / day</div><div class="v num"><span class="sk"></span></div><div class="s">instances</div></div>
+    <div><div class="k">Revenue · 24h</div><div class="v num"><span class="sk"></span></div><div class="s">24h</div></div>
+    <div><div class="k">Pending</div><div class="v num"><span class="sk"></span></div><div class="s">in-flight</div></div>
+    <div><div class="k">Run rate</div><div class="v num"><span class="sk"></span></div><div class="s">5h pace</div></div>
+  </section>
+
+  <section class="focus">
+    <div>
+      <div class="k" id="profitLabel">Profit / day</div>
+      <div class="v num" id="profitVal">—</div>
+      <div class="s" id="profitSub"></div>
+      <div class="s" id="paceSub" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <section class="band six" id="analytics">
+    <div><div class="k">Break-even PRL</div><div class="v num"><span class="sk"></span></div><div class="s"></div></div>
+    <div><div class="k">Break-even yield</div><div class="v num"><span class="sk"></span></div><div class="s"></div></div>
+    <div><div class="k">Yield · network</div><div class="v num"><span class="sk"></span></div><div class="s"></div></div>
+    <div><div class="k">Yield · pace</div><div class="v num"><span class="sk"></span></div><div class="s">5h</div></div>
+    <div><div class="k">Yield · realized</div><div class="v num"><span class="sk"></span></div><div class="s">24h</div></div>
+    <div><div class="k">Your share</div><div class="v num"><span class="sk"></span></div><div class="s">pool · net</div></div>
+  </section>
+
+  <section class="surface pad" style="max-width:860px">
+    <h2>Efficiency</h2>
+    <div class="erow"><span class="lbl">Revenue</span>
+      <span class="ebar rev"><i id="barRev" style="width:0%"></i></span>
+      <span class="val num" id="effRev">—</span></div>
+    <div class="erow"><span class="lbl">Burn</span>
+      <span class="ebar spend"><i id="barSpend" style="width:0%"></i></span>
+      <span class="val num" id="effSpend">—</span></div>
+    <div class="eff-foot">
+      <span>profit <b class="num" id="effProfit">—</b></span>
+        <span class="dim">yield <span class="num" id="effYield">—</span> PRL/TH·day</span>
+    </div>
+    <div class="eff-foot">
+      <span class="lbl dim">invoice $/day</span>
+      <input type="text" id="actualDay" placeholder="e.g. 29.80" autocomplete="off">
+      <span id="actualDiff" class="dim"></span>
+    </div>
+  </section>
+
+  <section class="surface pad">
+    <h2>Profit / GPU</h2>
+    <div class="scroll"><div id="pergpu"></div><div id="workers"></div></div>
+  </section>
+
+  <section class="surface pad">
+    <h2>Groups</h2>
+    <div class="scroll"><div id="groups"></div></div>
+  </section>
+
+  <section class="surface pad">
+    <h2>What-if</h2>
+    <div class="scroll"><div id="whatif"></div></div>
+  </section>
+
+  <footer>burn is an estimate · invoices are the truth</footer>
+</main>
+
+<main id="viewCalc" hidden>
+  <section class="surface pad">
+    <h2>Inputs</h2>
+    <div class="fgrid">
+      <div class="field" style="grid-column:1/-1;max-width:420px">
+        <label class="fl" for="cGpu">GPU class</label>
+        <select id="cGpu"></select>
+        <div class="hint" id="gpuHint">—</div>
+      </div>
+      <div class="field">
+        <label class="fl" for="cThs">TH/s per GPU</label>
+        <input type="text" inputmode="decimal" id="cThs" class="num" placeholder="e.g. 213">
+        <div class="hint" id="thsHint">—</div>
+      </div>
+      <div class="field">
+        <label class="fl" for="cQty">Quantity</label>
+        <input type="text" inputmode="numeric" id="cQty" class="num" value="1">
+      </div>
+      <div class="field">
+        <label class="fl" for="cFees">Fees %</label>
+        <input type="text" inputmode="decimal" id="cFees" class="num" value="1">
+      </div>
+      <div class="field">
+        <label class="fl" for="cPrice">PRL price $</label>
+        <input type="text" inputmode="decimal" id="cPrice" class="num">
+        <div class="hint">live</div>
+      </div>
+      <div class="field">
+        <label class="fl" for="cYieldSrc">Yield source</label>
+        <select id="cYieldSrc">
+          <option value="network">Network model</option>
+          <option value="pace">Your pace (pending epochs)</option>
+          <option value="realized">Your realized (24h)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="fl" for="cYield">Yield PRL / TH/s / day</label>
+        <input type="text" inputmode="decimal" id="cYield" class="num">
+        <div class="hint" id="yieldHint">—</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="surface pad">
+    <h2>Result <small id="resName">—</small></h2>
+    <div class="scroll"><div id="ctable"></div></div>
+    <div class="csum" id="csum"></div>
+  </section>
+
+  <footer>estimates, not bills</footer>
+</main>
+
+<main id="viewSettings" hidden>
+  <section class="surface pad">
+    <h2>Settings</h2>
+    <div class="fgrid">
+      <div class="field" style="grid-column:1/-1;max-width:560px">
+        <label class="fl" for="sAddr">Pearl wallet address</label>
+        <input type="text" id="sAddr" placeholder="prl1…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label class="fl" for="sOrg">Salad org</label>
+        <input type="text" id="sOrg" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label class="fl" for="sProj">Salad project</label>
+        <input type="text" id="sProj" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label class="fl" for="sFee">Pool fee %</label>
+        <input type="text" id="sFee" class="num" autocomplete="off">
+      </div>
+      <div class="field" style="grid-column:1/-1;max-width:560px">
+        <label class="fl" for="sKey">Salad API key</label>
+        <input type="password" id="sKey" placeholder="leave blank to keep current" autocomplete="off">
+        <div class="hint" id="sKeyHint"></div>
+      </div>
+    </div>
+    <div class="eff-foot">
+      <button class="btn primary" id="sSave">Save</button>
+      <span id="sStatus" class="dim"></span>
+    </div>
+  </section>
+  <footer>stored locally in config.json</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const UPTIMES = ["high", "medium", "low", "batch"];
+const nf = (d, min) => new Intl.NumberFormat("en-US", { minimumFractionDigits: min, maximumFractionDigits: d });
+const n0 = nf(0, 0), n1 = nf(1, 1), n2 = nf(2, 2), n4 = nf(4, 4), n5 = nf(5, 5);
+const money = v => v == null ? "—" : (v < 0 ? "-$" : "$") + n2.format(Math.abs(v));
+const money4 = v => v == null ? "—" : (v < 0 ? "-$" : "$") + n4.format(Math.abs(v));
+const prl = v => v == null ? "—" : n4.format(+v) + " PRL";
+const pct = v => v == null ? "—" : n1.format(+v) + "%";
+const sgn = v => v == null ? "" : v >= 0 ? "pos" : "neg";
+const fmtShare = v => v == null ? "—" : (v < 0.1 ? n5.format(v) : n2.format(v)) + "%";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const tierChip = p => `<span class="chip ${p}">${p}</span>`;
+
+let uptimes = JSON.parse(localStorage.getItem("pearlcalc_uptimes") || "null") || { high: 99, medium: 95, low: 90, batch: 80 };
+let data = null, prev = {};
+
+function flash(el, key, val) {
+  if (prev[key] !== undefined && prev[key] !== val) {
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+  }
+  prev[key] = val;
+}
+
+function render(d) {
+  data = d;
+  const ch = d.pearl_24h_change ?? 0;
+  $("price").innerHTML = `PRL <b>${money(d.pearl_usd)}</b> <span class="chip ${ch >= 0 ? "up" : "down"}">${ch >= 0 ? "+" : ""}${pct(ch)} · 24h</span>`;
+  $("live").innerHTML = `updated ${new Date(d.ts).toLocaleTimeString()}`;
+
+  const warns = [];
+  if (d.stale) warns.push("STALE — upstream fetch failed, showing last good data.");
+  (d.errors || []).forEach(e => warns.push(e));
+  if (!(d.models || []).length) {
+    warns.push("no GPUs running");
+  } else {
+    const mapWarn = (d.groups || []).filter(g => g.warning && g.running > 0);
+    if (mapWarn.length) warns.push(`cost estimated: ${mapWarn.map(g => g.name).join(", ")}`);
+  }
+  $("alert").style.display = warns.length ? "block" : "none";
+  $("alert").textContent = warns.join("\n");
+
+  const s = d.spend, r = d.revenue, p = d.profit, t = d.per_th;
+  const band = [
+    ["hash", "Hashrate", n2.format(d.total_ths) + " <span class='dim' style='font-size:12px'>TH/s</span>", `${d.gpu_count} GPUs mining`],
+    ["spend", "Burn / day", money(s.day), `${money(s.hr)}/hr · per-second billed`],
+    ["rev", "Revenue · 24h", money(r.usd_24h), `${prl(r.prl_24h)}`],
+    ["pend", "Pending", prl(r.pending_prl), `${money(r.pending_usd)}`],
+    ["run", "Run rate", money(r.runrate_usd_day) + " <span class='dim' style='font-size:12px'>/day</span>", r.runrate_prl_day == null ? "—" : `${n4.format(r.runrate_prl_day)} PRL/day · 5h`],
+  ];
+  $("band").innerHTML = band.map(([k, lab, v, sub]) =>
+    `<div><div class="k">${lab}</div><div class="v num" data-k="${k}">${v}</div><div class="s">${sub}</div></div>`).join("");
+  $("band").querySelectorAll("[data-k]").forEach(el => flash(el, el.dataset.k, el.textContent));
+
+  const exp = p.expected_day;
+  const mining = (d.models || []).length > 0;
+  $("profitLabel").textContent = "Profit / day";
+  const pv = $("profitVal");
+  pv.textContent = mining ? money(exp) : "—";
+  pv.className = "v num " + (mining ? sgn(exp) : "");
+  flash(pv, "profit", pv.textContent);
+  $("profitSub").innerHTML = !mining
+    ? "no GPUs running"
+    : exp == null
+      ? "waiting for data"
+      : `rev ${money(p.expected_rev_day)} − burn ${money(s.day)}/day · margin <span class="${sgn(exp)}">${p.expected_margin == null ? "—" : pct(100 * p.expected_margin)}</span>`;
+  $("paceSub").innerHTML = mining && r.runrate_usd_day != null
+    ? `5h pace ${money(r.runrate_usd_day)}/day`
+    : "";
+
+  $("effRev").textContent = money4(t.rev_day);
+  $("effSpend").textContent = money4(t.spend_day);
+  const ep = $("effProfit"); ep.textContent = money4(t.profit_day); ep.className = "num " + sgn(t.profit_day);
+  $("effYield").textContent = t.yield_prl_day == null ? "—" : n5.format(t.yield_prl_day);
+  const mx = Math.max(t.rev_day || 0, t.spend_day || 0, 1e-9);
+  $("barRev").style.width = (100 * (t.rev_day || 0) / mx) + "%";
+  $("barSpend").style.width = (100 * (t.spend_day || 0) / mx) + "%";
+
+  const a = d.analytics || {};
+  const an = [
+    ["be", "Break-even PRL", a.break_even_usd == null ? "—" : money4(a.break_even_usd), ""],
+    ["bey", "Break-even yield", a.break_even_yield_prl_day == null ? "—" : n5.format(a.break_even_yield_prl_day), ""],
+    ["ny", "Yield · network", a.network_yield_prl_day == null ? "—" : n5.format(a.network_yield_prl_day), a.block_reward_prl ? `reward ${n0.format(a.block_reward_prl)} PRL · diff ${a.difficulty == null ? "—" : (a.difficulty / 1e6).toFixed(2) + "M"}` : "network data unavailable"],
+    ["py", "Yield · pace", a.pace_yield_prl_day == null ? "—" : n5.format(a.pace_yield_prl_day), "last 5h"],
+    ["ry", "Yield · realized", a.realized_yield_prl_day == null ? "—" : n5.format(a.realized_yield_prl_day), "24h"],
+    ["sh", "Your share", fmtShare(a.share_pool_pct), a.pool_hashrate_ths ? `${n2.format(a.pool_hashrate_ths / 1e6)} EH/s · net ${fmtShare(a.share_network_pct)}` : "—"],
+  ];
+  $("analytics").innerHTML = an.map(([k, lab, v, sub]) =>
+    `<div><div class="k">${lab}</div><div class="v num" data-k="a-${k}">${v}</div><div class="s">${sub}</div></div>`).join("");
+  $("analytics").querySelectorAll("[data-k]").forEach(el => flash(el, el.dataset.k, el.textContent));
+
+  $("pergpu").innerHTML = `<div class="phead"><span>GPU</span><span>count</span><span>avg TH/s</span><span>rev / day / GPU</span><span>cost / day / GPU</span><span>profit / day / GPU</span><span>fleet profit / day</span></div>` +
+    ((d.per_gpu || []).map(g => `<div class="prow">
+      <span class="gname">${esc(g.model)}<div class="dim" style="font-weight:400;font-size:11.5px">${esc(g.class || "unmapped")}</div></span>
+      <span class="num dim">${g.mining} mining<span class="dim"> / ${g.instances} run</span></span>
+      <span class="num">${n2.format(g.avg_ths)}</span>
+      <span class="num dim">${money(g.rev_day_gpu)}</span>
+      <span class="num dim">${money(g.cost_day_gpu)}</span>
+      <span class="num ${sgn(g.profit_day_gpu)}">${money(g.profit_day_gpu)}</span>
+      <span class="num ${sgn(g.profit_day)}">${money(g.profit_day)}</span>
+    </div>`).join("") || `<p class="dim">No GPUs running.</p>`);
+
+  const wrk = d.workers || [];
+  $("workers").innerHTML = wrk.length ? `<div class="ihead"><span>worker</span><span>GPU</span><span>node ip</span><span style="text-align:right">TH/s</span></div>` +
+    wrk.map(w => `<div class="irow">
+      <span class="num">${esc(w.worker || "—")}</span>
+      <span class="dim" style="font-size:12px">${esc(w.gpu || "—")}</span>
+      <span class="num dim" style="font-size:12px">${esc(w.ip || "—")}</span>
+      <span class="num">${n2.format(w.ths)}</span>
+    </div>`).join("") : "";
+
+  $("groups").innerHTML = `<div class="ghead"><span>group</span><span>tier</span><span>GPU class (mapped)</span><span>instances</span><span style="text-align:right">$/hr</span><span style="text-align:right">control</span></div>` +
+    (d.groups || []).map(g => {
+      const run = g.running || 0, want = g.desired ?? 0;
+      const dots = Array.from({ length: Math.min(Math.max(want, run), 6) }, (_, i) =>
+        `<span class="dot${i < run ? "" : " off"}"></span>`).join("");
+      const st = g.salad_state || "unknown";
+      const transitional = st !== "running" && st !== "stopped";
+      const act = st === "running" ? "stop" : "start";
+      const ctl = transitional
+        ? `<button class="gbtn" disabled>${esc(st)}</button>`
+        : `<button class="gbtn ${act}" data-group="${esc(g.name)}" data-act="${act}" title="salad state: ${esc(st)}">${act}</button>`;
+      return `<div class="grow" title="${esc("allowed classes: " + ((g.allowed || []).join(", ") || "—"))}">
+        <span class="gname">${esc(g.name)}</span>${tierChip(esc(g.priority))}
+        <span>${esc(g.class || "unmapped")}${g.estimated_cost ? ' <span class="dim" style="font-size:11.5px">(cost estimated)</span>' : ""}</span>
+        <span class="num"><span class="dots">${dots}</span>${run}/${want}</span>
+        <span class="cost num">${money(g.cost_hr)}</span>
+        <span class="ctl">${ctl}</span></div>`;
+    }).join("");
+
+  const models = [...new Set((d.grid || []).map(g => g.model))];
+  $("whatif").innerHTML = models.map(m => {
+    const rows = d.grid.filter(g => g.model === m);
+    const best = Math.max(...rows.map(g => g.eff_profit_gpu_day ?? -Infinity));
+    const head = rows[0];
+    return `<div class="wgroup">
+      <div class="whead"><span class="wname">${esc(m)}</span><span class="dim" style="font-size:12px">${esc(head.class || "")}</span>
+        <span class="wnums">avg <b class="num">${n2.format(+((d.models.find(x => x.name === m) || {}).avg_ths || 0))}</b> TH/s</span></div>
+      <div class="thead"><span>tier</span><span>$/hr</span><span>$/TH·day</span><span>uptime</span><span style="text-align:right">profit / day</span></div>
+      ${rows.map(g => `<div class="tier">
+        ${tierChip(esc(g.priority))}
+        <span class="num">${money(g.price_hr)}</span>
+        <span class="num dim">${money4(g.cost_th_day)}</span>
+        <span class="up"><input type="range" min="0" max="100" step="1" value="${uptimes[g.priority] ?? 90}"
+          data-tier="${esc(g.priority)}" aria-label="assumed uptime for ${esc(g.priority)} tier"><em>${uptimes[g.priority] ?? 90}%</em></span>
+        <span class="eff"><span class="${sgn(g.eff_profit_gpu_day)} num">${money(g.eff_profit_gpu_day)}</span>
+          ${g.eff_profit_gpu_day === best ? '<span class="best" title="best"></span>' : ""}</span>
+      </div>`).join("")}
+    </div>`;
+  }).join("") || `<p class="dim">No GPUs running.</p>`;
+
+  document.title = "pearlcalc · " + money(p.day) + "/day";
+  syncCalc(d);
+}
+
+$("whatif").addEventListener("input", e => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || t.type !== "range") return;
+  const tier = t.dataset.tier;
+  uptimes[tier] = Math.max(0, Math.min(100, +t.value || 0));
+  const em = t.closest(".up").querySelector("em");
+  if (em) em.textContent = uptimes[tier] + "%";
+  localStorage.setItem("pearlcalc_uptimes", JSON.stringify(uptimes));
+  clearTimeout(window._ut); window._ut = setTimeout(load, 350);
+});
+
+$("actualDay").value = localStorage.getItem("pearlcalc_actual_day") || "";
+$("actualDay").addEventListener("input", e => {
+  localStorage.setItem("pearlcalc_actual_day", e.target.value);
+  renderActual();
+});
+function renderActual() {
+  const a = parseFloat($("actualDay").value);
+  $("actualDiff").innerHTML = !data || !Number.isFinite(a) ? ""
+    : `burn model ${money(data.spend.day)}/day → diff <span class="${sgn(a - data.spend.day)}">${money(a - data.spend.day)}/day</span>`;
+}
+
+let loadTimer = null;
+async function load(fresh) {
+  if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+  let qs = UPTIMES.map(p => `u_${p}=${(uptimes[p] / 100).toFixed(3)}`).join("&");
+  if (fresh) { qs += "&fresh=1"; $("refresh").classList.add("spin"); }
+  try {
+    const res = await fetch("/api/data?" + qs);
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+    render(d); renderActual();
+  } catch (e) {
+    $("live").innerHTML = `<span class="neg">error: ${esc(e.message)}</span>`;
+  }
+  $("refresh").classList.remove("spin");
+  loadTimer = setTimeout(load, 30000);
+}
+$("refresh").addEventListener("click", () => load(true));
+
+let stopPending = null;
+$("groups").addEventListener("click", async e => {
+  const btn = e.target.closest(".gbtn");
+  if (!btn || btn.disabled) return;
+  const name = btn.dataset.group, act = btn.dataset.act;
+  if (!name || !act) return;
+  if (act === "stop" && stopPending !== name) {
+    stopPending = name;
+    btn.textContent = "sure?";
+    btn.classList.add("confirm");
+    setTimeout(() => {
+      if (stopPending === name) {
+        stopPending = null;
+        if (btn.isConnected) { btn.textContent = "stop"; btn.classList.remove("confirm"); }
+      }
+    }, 3000);
+    return;
+  }
+  stopPending = null;
+  btn.disabled = true;
+  btn.textContent = act === "stop" ? "stopping…" : "starting…";
+  try {
+    const res = await fetch("/api/group", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, action: act }),
+    });
+    const d = await res.json();
+    if (!res.ok || d.error) throw new Error(d.error || ("http " + res.status));
+  } catch (err) {
+    $("alert").style.display = "block";
+    $("alert").textContent = `${act} ${name} failed: ${err.message}`;
+  }
+  if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+  load(true);
+});
+
+let calcReady = false, calcSel = "batch", calcPriceDirty = false, calcYieldManual = false, calcSrc = "network";
+
+function calcClass() {
+  return ((data && data.classes) || []).find(c => c.id === $("cGpu").value) || null;
+}
+
+function calcNum(id) {
+  const v = parseFloat($(id).value);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function calcYieldFor(src) {
+  const a = (data && data.analytics) || {};
+  if (src === "pace") return a.pace_yield_prl_day ?? a.realized_yield_prl_day;
+  if (src === "realized") return a.realized_yield_prl_day ?? a.pace_yield_prl_day;
+  return a.network_yield_prl_day ?? a.pace_yield_prl_day ?? a.realized_yield_prl_day;
+}
+
+function applyYieldSrc() {
+  calcSrc = $("cYieldSrc").value || "network";
+  const v = calcYieldFor(calcSrc);
+  if (v != null) { $("cYield").value = n5.format(v); calcYieldManual = false; }
+  $("yieldHint").textContent = {
+    network: "network-implied",
+    pace: "5h pace",
+    realized: "24h credits",
+  }[calcSrc];
+}
+
+function initCalc() {
+  const sorted = [...(data.classes || [])].sort((a, b) => a.name.localeCompare(b.name));
+  if (!sorted.length) return;
+  $("cGpu").innerHTML = sorted.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  const preset = (data.models || []).map(m => sorted.find(c => c.key === m.key)).find(Boolean);
+  if (preset) $("cGpu").value = preset.id;
+  $("cPrice").value = n4.format(data.pearl_usd);
+  if (!$("cYieldSrc").value) $("cYieldSrc").value = "network";
+  applyYieldSrc();
+  calcReady = true;
+  onGpuCalc();
+}
+
+function onGpuCalc() {
+  const c = calcClass();
+  if (!c || !data) return;
+  const m = (data.models || []).find(x => x.key === c.key);
+  $("cThs").value = m ? n2.format(m.avg_ths) : "";
+  $("thsHint").textContent = m ? `measured ${n2.format(m.avg_ths)} TH/s` : "enter TH/s";
+  $("gpuHint").textContent = "hi " + money(c.prices.high) + " · med " + money(c.prices.medium) +
+    " · low " + money(c.prices.low) + " · batch " + money(c.prices.batch);
+  renderCalc();
+}
+
+function renderCalc() {
+  const c = calcClass();
+  if (!c) return;
+  const ths = calcNum("cThs"), qty = Math.max(0, Math.round(calcNum("cQty")) || 0), fees = calcNum("cFees");
+  const price = calcNum("cPrice"), yieldDay = calcNum("cYield");
+  $("resName").textContent = c.name + (qty > 1 ? " ×" + qty : "");
+
+  const revHr = ths * qty * yieldDay / 24 * price * (1 - fees / 100);
+  const rows = UPTIMES.map(pr => {
+    const costHr = (c.prices[pr] || 0) * qty;
+    const profitHr = revHr - costHr;
+    return { pr, costHr, revHr, profitHr, profitDay: profitHr * 24 };
+  });
+  const best = Math.max(...rows.map(r => r.profitDay));
+
+  $("ctable").innerHTML = `<div class="chead"><span>tier</span><span>cost / hr</span><span>revenue / hr</span><span>profit / hr</span><span>profit / day</span></div>` +
+    rows.map(r => `<div class="crow${r.pr === calcSel ? " sel" : ""}" data-tier="${r.pr}">
+      <span class="gsum"><span class="chip ${r.pr}">${r.pr}</span>${r.profitDay === best ? '<span class="best" title="best"></span>' : ""}</span>
+      <span class="num">${money(r.costHr)}</span>
+      <span class="num dim">${money(r.revHr)}</span>
+      <span class="num ${sgn(r.profitHr)}">${money4(r.profitHr)}</span>
+      <span class="num ${sgn(r.profitDay)}">${money(r.profitDay)}</span>
+    </div>`).join("");
+
+  const s = rows.find(r => r.pr === calcSel) || rows[rows.length - 1];
+  $("csum").innerHTML =
+    `<span class="item"><span class="k2">${s.pr} · profit / hr</span><span class="bigv num ${sgn(s.profitHr)}">${money(s.profitHr)}</span></span>` +
+    `<span class="item"><span class="k2">${s.pr} · profit / day</span><span class="bigv num ${sgn(s.profitDay)}">${money(s.profitDay)}</span></span>` +
+    `<span class="item"><span class="k2">margin</span><span class="bigv num ${sgn(s.revHr ? s.profitHr / s.revHr : 0)}">${s.revHr > 0 ? n1.format(100 * s.profitHr / s.revHr) + "%" : "—"}</span></span>` +
+    `<span class="item"><span class="k2">cost $/TH·day</span><span class="bigv num dim">${ths > 0 ? money4(s.costHr * 24 / ths) : "—"}</span></span>` +
+    `<span class="item"><span class="k2">revenue $/TH·day</span><span class="bigv num dim">${ths > 0 ? money4(s.revHr * 24 / ths) : "—"}</span></span>`;
+
+  $("ctable").querySelectorAll(".crow").forEach(el =>
+    el.addEventListener("click", () => { calcSel = el.dataset.tier; renderCalc(); }));
+}
+
+function syncCalc(d) {
+  if ($("viewCalc").hidden) return;
+  if (!calcReady) { initCalc(); return; }
+  if (!calcPriceDirty) $("cPrice").value = n4.format(d.pearl_usd);
+  if (!calcYieldManual) applyYieldSrc();
+  renderCalc();
+}
+
+$("cGpu").addEventListener("change", onGpuCalc);
+["cThs", "cQty", "cFees"].forEach(id => $(id).addEventListener("input", renderCalc));
+$("cPrice").addEventListener("input", () => { calcPriceDirty = true; renderCalc(); });
+$("cYield").addEventListener("input", () => { calcYieldManual = true; renderCalc(); });
+$("cYieldSrc").addEventListener("change", () => { applyYieldSrc(); renderCalc(); });
+
+function setTab(name) {
+  localStorage.setItem("pearlcalc_tab", name);
+  $("viewDash").hidden = name !== "dash";
+  $("viewCalc").hidden = name !== "calc";
+  $("viewSettings").hidden = name !== "settings";
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === name));
+  if (name === "calc" && data) syncCalc(data);
+  if (name === "settings") loadSettings();
+  window.scrollTo(0, 0);
+}
+
+async function loadSettings() {
+  try {
+    const res = await fetch("/api/settings");
+    const s = await res.json();
+    if (s.error) throw new Error(s.error);
+    $("sAddr").value = s.pearl_address || "";
+    $("sOrg").value = s.salad_org || "";
+    $("sProj").value = s.salad_project || "";
+    $("sFee").value = s.pool_fee_pct ?? 1;
+    $("sKey").value = "";
+    $("sKeyHint").textContent = "current: " + (s.salad_api_key_masked || "—");
+    $("sStatus").textContent = "";
+  } catch (e) {
+    $("sKeyHint").textContent = "settings load failed: " + e.message;
+  }
+}
+
+$("sSave").addEventListener("click", async () => {
+  $("sStatus").textContent = "saving…";
+  try {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pearl_address: $("sAddr").value.trim(),
+        salad_org: $("sOrg").value.trim(),
+        salad_project: $("sProj").value.trim(),
+        salad_api_key: $("sKey").value.trim(),
+        pool_fee_pct: parseFloat($("sFee").value),
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok || d.error) throw new Error(d.error || ("http " + res.status));
+    $("sStatus").textContent = "saved";
+    loadSettings();
+    if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+    load(true);
+  } catch (e) {
+    $("sStatus").textContent = "error: " + e.message;
+  }
+});
+
+$("tabs").addEventListener("click", e => {
+  const b = e.target.closest(".tab");
+  if (b) setTab(b.dataset.view);
+});
+$("brand").addEventListener("click", () => setTab("dash"));
+
+function appMode() {
+  document.documentElement.classList.add("app-mode");
+  $("winctl").hidden = false;
+}
+window.addEventListener("pywebviewready", appMode);
+if (window.pywebview && window.pywebview.api) appMode();
+$("winMin").addEventListener("click", () => window.pywebview && window.pywebview.api.min());
+$("winMax").addEventListener("click", () => window.pywebview && window.pywebview.api.max());
+$("winClose").addEventListener("click", () => window.pywebview && window.pywebview.api.close());
+$("dragspacer").addEventListener("dblclick", () => {
+  if (document.documentElement.classList.contains("app-mode")) window.pywebview.api.max();
+});
+
+const initTab = localStorage.getItem("pearlcalc_tab");
+setTab(["dash", "calc", "settings"].includes(initTab) ? initTab : "dash");
+load();
+</script>
+</body>
+</html>

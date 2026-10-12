@@ -1,0 +1,9 @@
+{
+  "pearl_address": "",
+  "salad_org": "",
+  "salad_project": "",
+  "salad_api_key": "",
+  "port": 8000,
+  "pool_fee_pct": 1,
+  "group_class_overrides": {}
+}
