@@ -1,26 +1,33 @@
 # PrlCalc
+
 Automatic analysis tool with integration for pearlhash wallets with support for saladcloud gpu rental.
 
-Live dashboard + calculator: profit/break-even at live PRL price, per-GPU hashrate, pool/network shares, container group start/stop, and a what-if calculator for SaladCloud GPU prices.
+I wrote this to watch my own mining setup without having five browser tabs open. It reads my worker hashrate and the live PRL price from pearlhash, reads GPU prices and container state from the SaladCloud API, and boils all of it down to the numbers I actually care about: what each card earns per day, what I'm paying per terahash, the price PRL needs to hold for me to break even, and which priority tier would earn the most for the hardware I'm renting.
 
-## Run
+The calculator tab works standalone too. Pick a GPU class and a priority tier, type in a hashrate if you don't trust the measured one, and it shows profit per hour and per day. The groups table lets you start and stop container groups without opening the Salad portal.
 
-- Web: `python pearlcalc.py` → http://localhost:8000 (stdlib only)
-- Desktop: `python app.py` (needs `pip install pywebview`) or build a single exe with `build-desktop.ps1` (needs `pip install pyinstaller`)
-- Tests: `python test_pearlcalc.py`
-- UI screenshots (dev): `npm i` then `npm run shot`
+Everything refreshes itself every 30 seconds, and there's a button to force it if you're impatient.
 
-## Configure
+## Running it
 
-Open the **Settings** tab in the app: wallet address, Salad org/project, Salad API key, pool fee.
-Values are stored in `config.json` next to the script/exe — kept local and gitignored, never uploaded. `config.example.json` shows the shape.
+The web version needs nothing but Python:
 
-## Data
+    python pearlcalc.py
 
-- pearlhash.xyz public API — wallet, price, chain stats
-- SaladCloud public API — GPU classes, container groups, instances
+then open http://localhost:8000.
+
+If you'd rather skip Python entirely, the Releases page has a prebuilt pearlcalc.exe. There's also `python app.py` for a native window (install pywebview first), and `build-desktop.ps1` if you want to build the exe yourself (install pyinstaller).
+
+Tests: `python test_pearlcalc.py`. The screenshot script is a development tool and needs playwright (`npm i`).
+
+## Settings
+
+On first run, open the Settings tab and fill in your Pearl wallet address, Salad org, project name, API key and the pool fee. They're saved to config.json next to the script or exe, which stays on your machine and is gitignored. The only things that leave your computer are the API requests themselves. If you'd rather edit a file, config.example.json shows the format.
+
+## Where the data comes from
+
+pearlhash.xyz exposes a public API for wallet stats, the live price, block reward, difficulty and network hashrate. SaladCloud exposes a public API for GPU class pricing, container groups and their instances. No scraping needed, and nothing sitting between you and the numbers.
 
 ## License
 
-MIT — see LICENSE
-
+MIT, see LICENSE.
