@@ -187,6 +187,38 @@ def test_mask_and_save_config():
         assert cfg["salad_api_key"] == "new"  # blank values are ignored, not written
 
 
+def test_build_container_patch():
+    group = {
+        "priority": "low",
+        "container": {
+            "command": ["/bin/sh", "-c", "run"],
+            "environment_variables": {"A": "1"},
+            "image": "me/x:m",
+            "image_caching": True,
+            "resources": {"cpu": 1, "memory": 1024, "shm_size": 64, "gpu_classes": ["A", "B"]},
+        },
+    }
+    p = pc.build_container_patch(group, priority="high")
+    assert p["priority"] == "high"
+    assert p["image"] == "me/x:m"
+    assert p["command"] == ["/bin/sh", "-c", "run"]
+    assert p["environment_variables"] == {"A": "1"}
+    assert p["resources"] == {"cpu": 1, "memory": 1024, "shm_size": 64, "gpu_classes": ["A", "B"]}
+    assert "registry_authentication" not in p
+
+    p2 = pc.build_container_patch(group, gpu_classes=["C"])
+    assert p2["resources"]["gpu_classes"] == ["C"]
+    assert p2["priority"] == "low"
+    assert p2["image"] == "me/x:m"
+
+    p3 = pc.build_container_patch(
+        group, image="me/x:2",
+        registry_auth={"docker_hub": {"username": "u", "personal_access_token": "t"}})
+    assert p3["image"] == "me/x:2"
+    assert p3["registry_authentication"]["docker_hub"]["username"] == "u"
+    assert p3["resources"]["gpu_classes"] == ["A", "B"]
+
+
 def test_wallet_missing():
     out = pc.compute({"price": {"usd": 1.35}, "account": {}, "classes": CLASSES,
                       "groups": [], "instances": {}}, now_ms=NOW)
@@ -205,5 +237,6 @@ if __name__ == "__main__":
     test_uptime_scaling()
     test_unmapped_fallback()
     test_mask_and_save_config()
+    test_build_container_patch()
     test_wallet_missing()
     print("all tests passed")

@@ -101,6 +101,48 @@ def salad_action(cfg, name, action):
         return r.status
 
 
+def salad_get_group(cfg, name):
+    org, proj = cfg["salad_org"], cfg["salad_project"]
+    url = f"{SALAD_API}/{org}/projects/{proj}/containers/{name}"
+    return get_json(url, {"Salad-Api-Key": cfg["salad_api_key"]})
+
+
+def salad_patch(cfg, name, patch):
+    """PATCH a container group. Returns the updated group object."""
+    org, proj = cfg["salad_org"], cfg["salad_project"]
+    url = f"{SALAD_API}/{org}/projects/{proj}/containers/{name}"
+    req = urllib.request.Request(
+        url, data=json.dumps(patch).encode(), method="PATCH",
+        headers={"Salad-Api-Key": cfg["salad_api_key"],
+                 "Content-Type": "application/merge-patch+json", **UA})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8") or "{}")
+
+
+def build_container_patch(group, priority=None, gpu_classes=None, image=None, registry_auth=None):
+    """Rebuild the mutable container fields for a PATCH from the live group so
+    command, env, caching and resources survive the update. Only fields that
+    are passed in (or already exist on the group) are sent."""
+    c = group.get("container") or {}
+    res = c.get("resources") or {}
+    patch = {
+        "command": c.get("command") or [],
+        "environment_variables": c.get("environment_variables") or {},
+        "image": image or c.get("image"),
+        "image_caching": c.get("image_caching", True),
+        "priority": priority or group.get("priority"),
+        "resources": {
+            "cpu": res.get("cpu"),
+            "memory": res.get("memory"),
+            "shm_size": res.get("shm_size"),
+            "gpu_classes": gpu_classes if gpu_classes is not None else (res.get("gpu_classes") or []),
+        },
+    }
+    if registry_auth:
+        patch["registry_authentication"] = registry_auth
+    return patch
+
+
 def normalize_gpu(name):
     s = str(name or "").lower().replace("nvidia", " ").replace("geforce", " ")
     s = re.sub(r"\(.*?\)", " ", s)
@@ -264,7 +306,9 @@ def compute(bundle, uptimes=None, overrides=None, now_ms=None):
         spend_hr += cost
         group_rows.append({**row, "running": running, "price_hr": p,
                            "estimated_cost": estimated, "cost_hr": round(cost, 4),
-                           "salad_state": ((g.get("current_state") or {}).get("status"))})
+                           "salad_state": ((g.get("current_state") or {}).get("status")),
+                           "image": (g.get("container") or {}).get("image"),
+                           "allowed_ids": ((g.get("container") or {}).get("resources") or {}).get("gpu_classes") or []})
     spend_hr = round(spend_hr, 4)
     spend_day = round(spend_hr * 24, 2)
 
@@ -506,13 +550,26 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, b"not found", "text/plain")
 
+    def _write_guard(self):
+        origin = self.headers.get("Origin") or ""
+        if origin and not (origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")):
+            self._send(403, json.dumps({"error": "forbidden origin"}).encode(), "application/json")
+            return False
+        if "application/json" not in (self.headers.get("Content-Type") or ""):
+            self._send(415, json.dumps({"error": "content-type must be application/json"}).encode(),
+                       "application/json")
+            return False
+        return True
+
     def do_POST(self):
         route = urlparse(self.path)
+        if route.path not in ("/api/settings", "/api/group"):
+            self._send(404, b"not found", "text/plain")
+            return
+        if not self._write_guard():
+            return
         if route.path == "/api/settings":
             self._post_settings()
-            return
-        if route.path != "/api/group":
-            self._send(404, b"not found", "text/plain")
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -522,18 +579,33 @@ class Handler(BaseHTTPRequestHandler):
             return
         name = str(body.get("name") or "")
         action = str(body.get("action") or "")
-        if action not in ("start", "stop"):
-            self._send(400, json.dumps({"error": "action must be 'start' or 'stop'"}).encode(),
-                       "application/json")
+        if action in ("start", "stop"):
+            self._post_group_lifecycle(name, action)
             return
+        if action == "update":
+            self._post_group_update(body, name)
+            return
+        self._send(400, json.dumps({"error": "action must be start, stop or update"}).encode(),
+                   "application/json")
+
+    def _known_group(self, name):
+        """Returns the bundle group dict if the name exists in the org, else None."""
         try:
             b = get_bundle(self.cfg)
-            known = {g["name"] for g in (b["data"].get("groups") or [])}
+            for g in b["data"].get("groups") or []:
+                if g["name"] == name:
+                    return b, g
+            return b, None
         except Exception as e:
             self._send(502, json.dumps({"error": f"{type(e).__name__}: {e}"}).encode(),
                        "application/json")
+            return None, None
+
+    def _post_group_lifecycle(self, name, action):
+        b, _ = self._known_group(name)
+        if b is None:
             return
-        if name not in known:
+        if not any(g["name"] == name for g in b["data"].get("groups") or []):
             self._send(404, json.dumps({"error": f"unknown container group: {name}"}).encode(),
                        "application/json")
             return
@@ -553,15 +625,79 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, json.dumps({"ok": True, "name": name, "action": action,
                                     "salad_status": status}).encode(), "application/json")
 
-    def _post_settings(self):
-        origin = self.headers.get("Origin") or ""
-        if origin and not (origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")):
-            self._send(403, json.dumps({"error": "forbidden origin"}).encode(), "application/json")
-            return
-        if "application/json" not in (self.headers.get("Content-Type") or ""):
-            self._send(415, json.dumps({"error": "content-type must be application/json"}).encode(),
+    def _post_group_update(self, body, name):
+        priority = str(body.get("priority") or "").strip() or None
+        image = str(body.get("image") or "").strip() or None
+        gpu_classes = body.get("gpu_classes")
+        docker_user = str(body.get("docker_user") or "").strip()
+        docker_token = str(body.get("docker_token") or "").strip()
+        if priority not in (None, "high", "medium", "low", "batch"):
+            self._send(400, json.dumps({"error": "priority must be high, medium, low or batch"}).encode(),
                        "application/json")
             return
+        if gpu_classes is not None and (not isinstance(gpu_classes, list) or not gpu_classes
+                                        or not all(isinstance(x, str) and x for x in gpu_classes)):
+            self._send(400, json.dumps({"error": "gpu_classes must be a non-empty list of class ids"}).encode(),
+                       "application/json")
+            return
+        if image is not None and len(image) > 256:
+            self._send(400, json.dumps({"error": "image string too long"}).encode(), "application/json")
+            return
+        if bool(docker_user) != bool(docker_token):
+            self._send(400, json.dumps({"error": "docker_user and docker_token must both be set or both empty"}).encode(),
+                       "application/json")
+            return
+        if not (priority or image or gpu_classes is not None):
+            self._send(400, json.dumps({"error": "nothing to update"}).encode(), "application/json")
+            return
+        b, _ = self._known_group(name)
+        if b is None:
+            return
+        if not any(g["name"] == name for g in b["data"].get("groups") or []):
+            self._send(404, json.dumps({"error": f"unknown container group: {name}"}).encode(),
+                       "application/json")
+            return
+        if gpu_classes is not None:
+            valid_ids = {c["id"] for c in b["data"].get("classes") or []}
+            unknown = [x for x in gpu_classes if x not in valid_ids]
+            if unknown:
+                self._send(400, json.dumps({"error": f"unknown gpu class ids: {unknown[:3]}"}).encode(),
+                           "application/json")
+                return
+        try:
+            group = salad_get_group(self.cfg, name)
+        except Exception as e:
+            self._send(502, json.dumps({"error": f"{type(e).__name__}: {e}"}).encode(),
+                       "application/json")
+            return
+        registry_auth = None
+        if docker_user:
+            registry_auth = {"docker_hub": {"username": docker_user,
+                                            "personal_access_token": docker_token}}
+        patch = {"container": build_container_patch(group, priority=priority, gpu_classes=gpu_classes,
+                                                    image=image, registry_auth=registry_auth)}
+        try:
+            updated = salad_patch(self.cfg, name, patch)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:300]
+            self._send(e.code, json.dumps({"error": f"salad {e.code}: {detail}"}).encode(),
+                       "application/json")
+            return
+        except Exception as e:
+            self._send(502, json.dumps({"error": f"{type(e).__name__}: {e}"}).encode(),
+                       "application/json")
+            return
+        with _lock:
+            _bundle["ts"] = 0.0
+        c = (updated.get("container") or {}) if isinstance(updated, dict) else {}
+        self._send(200, json.dumps({
+            "ok": True, "name": name, "action": "update",
+            "priority": (updated.get("priority") if isinstance(updated, dict) else None) or priority,
+            "image": c.get("image") or image,
+            "gpu_classes": (c.get("resources") or {}).get("gpu_classes") or gpu_classes,
+        }).encode(), "application/json")
+
+    def _post_settings(self):
         try:
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")

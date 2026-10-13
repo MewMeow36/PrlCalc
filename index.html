@@ -87,6 +87,40 @@
     <div class="scroll"><div id="groups"></div></div>
   </section>
 
+  <section class="surface pad" id="groupEditor" hidden>
+    <h2>Edit · <span id="geName"></span> <small id="geState"></small></h2>
+    <div class="fgrid">
+      <div class="field" style="grid-column:1/-1">
+        <label class="fl">priority</label>
+        <div class="tabs" id="gePri"></div>
+        <span id="gePriStatus" class="dim" style="margin-left:10px"></span>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label class="fl">allowed GPUs · <span id="geCount" class="dim"></span></label>
+        <div class="ge-row">
+          <input type="text" id="geFilter" placeholder="filter classes" style="width:220px">
+          <button class="btn primary" id="geSaveGpus">save allowed GPUs</button>
+          <span id="geGpuStatus" class="dim"></span>
+        </div>
+        <div class="ge-chips" id="geChips"></div>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label class="fl">container image</label>
+        <input type="text" id="geImage" style="width:100%;max-width:560px" placeholder="user/repo:tag" spellcheck="false">
+        <div class="ge-row" style="margin-top:8px">
+          <input type="text" id="geUser" placeholder="docker hub user" style="width:180px" autocomplete="off">
+          <input type="password" id="geToken" placeholder="docker hub token · not stored" style="width:250px" autocomplete="off">
+          <button class="btn primary" id="geSaveImage">save image</button>
+          <span id="geImgStatus" class="dim"></span>
+        </div>
+      </div>
+    </div>
+    <div class="eff-foot">
+      <button class="btn" id="geClose">close</button>
+      <span class="dim" style="font-size:11.5px">priority applies immediately · image change redeploys the group</span>
+    </div>
+  </section>
+
   <section class="surface pad">
     <h2>What-if</h2>
     <div class="scroll"><div id="whatif"></div></div>
@@ -300,9 +334,10 @@ function render(d) {
       const st = g.salad_state || "unknown";
       const transitional = st !== "running" && st !== "stopped";
       const act = st === "running" ? "stop" : "start";
-      const ctl = transitional
+      const ctl = (transitional
         ? `<button class="gbtn" disabled>${esc(st)}</button>`
-        : `<button class="gbtn ${act}" data-group="${esc(g.name)}" data-act="${act}" title="salad state: ${esc(st)}">${act}</button>`;
+        : `<button class="gbtn ${act}" data-group="${esc(g.name)}" data-act="${act}" title="salad state: ${esc(st)}">${act}</button>`)
+        + `<button class="gbtn edit" data-edit="${esc(g.name)}" title="edit priority, GPUs, image">edit</button>`;
       return `<div class="grow" title="${esc("allowed classes: " + ((g.allowed || []).join(", ") || "—"))}">
         <span class="gname">${esc(g.name)}</span>${tierChip(esc(g.priority))}
         <span>${esc(g.class || "unmapped")}${g.estimated_cost ? ' <span class="dim" style="font-size:11.5px">(cost estimated)</span>' : ""}</span>
@@ -380,6 +415,7 @@ let stopPending = null;
 $("groups").addEventListener("click", async e => {
   const btn = e.target.closest(".gbtn");
   if (!btn || btn.disabled) return;
+  if (btn.dataset.edit) { openGroupEditor(btn.dataset.edit); return; }
   const name = btn.dataset.group, act = btn.dataset.act;
   if (!name || !act) return;
   if (act === "stop" && stopPending !== name) {
@@ -411,6 +447,96 @@ $("groups").addEventListener("click", async e => {
   }
   if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
   load(true);
+});
+
+let editGroupName = null;
+const gpuSel = new Set();
+
+async function groupAction(payload) {
+  const res = await fetch("/api/group", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const d = await res.json();
+  if (!res.ok || d.error) throw new Error(d.error || ("http " + res.status));
+  return d;
+}
+
+function renderGeChips() {
+  const q = ($("geFilter").value || "").trim().toLowerCase();
+  $("geCount").textContent = gpuSel.size + " of " + ((data && data.classes) || []).length + " selected";
+  $("geChips").innerHTML = (((data && data.classes) || [])
+    .filter(c => !q || c.name.toLowerCase().includes(q))
+    .map(c => `<span class="gchip${gpuSel.has(c.id) ? " on" : ""}" data-id="${esc(c.id)}">${esc(c.name)}</span>`)
+    .join("")) || `<span class="dim">no matching class</span>`;
+}
+
+function openGroupEditor(name) {
+  const g = (((data || {}).groups) || []).find(x => x.name === name);
+  if (!g || !data) return;
+  editGroupName = name;
+  $("groupEditor").hidden = false;
+  $("geName").textContent = name;
+  $("geState").textContent = (g.salad_state || "?") + " · " + (g.running || 0) + "/" + (g.desired ?? "?") + " · " + money(g.cost_hr) + "/hr";
+  $("gePri").innerHTML = ["high", "medium", "low", "batch"].map(p =>
+    `<button class="tab${g.priority === p ? " active" : ""}" data-pri="${p}">${p}</button>`).join("");
+  $("gePriStatus").textContent = "";
+  gpuSel.clear();
+  (g.allowed_ids || []).forEach(id => gpuSel.add(id));
+  $("geFilter").value = "";
+  $("geGpuStatus").textContent = "";
+  renderGeChips();
+  $("geImage").value = g.image || "";
+  $("geUser").value = "";
+  $("geToken").value = "";
+  $("geImgStatus").textContent = "";
+  $("groupEditor").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+$("geClose").addEventListener("click", () => { editGroupName = null; $("groupEditor").hidden = true; });
+$("geFilter").addEventListener("input", renderGeChips);
+$("geChips").addEventListener("click", e => {
+  const chip = e.target.closest(".gchip");
+  if (!chip) return;
+  const id = chip.dataset.id;
+  if (gpuSel.has(id)) gpuSel.delete(id); else gpuSel.add(id);
+  renderGeChips();
+});
+$("gePri").addEventListener("click", async e => {
+  const b = e.target.closest("[data-pri]");
+  if (!b || !editGroupName) return;
+  $("gePriStatus").textContent = "saving…";
+  try {
+    await groupAction({ name: editGroupName, action: "update", priority: b.dataset.pri });
+    document.querySelectorAll("#gePri .tab").forEach(t => t.classList.toggle("active", t === b));
+    $("gePriStatus").textContent = "saved";
+    load(true);
+  } catch (err) { $("gePriStatus").textContent = "error: " + err.message; }
+});
+$("geSaveGpus").addEventListener("click", async () => {
+  if (!editGroupName) return;
+  if (!gpuSel.size) { $("geGpuStatus").textContent = "pick at least one"; return; }
+  $("geGpuStatus").textContent = "saving…";
+  try {
+    await groupAction({ name: editGroupName, action: "update", gpu_classes: [...gpuSel] });
+    $("geGpuStatus").textContent = "saved";
+    load(true);
+  } catch (err) { $("geGpuStatus").textContent = "error: " + err.message; }
+});
+$("geSaveImage").addEventListener("click", async () => {
+  if (!editGroupName) return;
+  const image = $("geImage").value.trim();
+  const user = $("geUser").value.trim(), token = $("geToken").value.trim();
+  if (!image) { $("geImgStatus").textContent = "image cannot be empty"; return; }
+  if (!!user !== !!token) { $("geImgStatus").textContent = "fill both docker hub fields or neither"; return; }
+  $("geImgStatus").textContent = "saving…";
+  try {
+    await groupAction({ name: editGroupName, action: "update", image, docker_user: user, docker_token: token });
+    $("geImgStatus").textContent = "saved";
+    $("geToken").value = "";
+    load(true);
+  } catch (err) { $("geImgStatus").textContent = "error: " + err.message; }
 });
 
 let calcReady = false, calcSel = "batch", calcPriceDirty = false, calcYieldManual = false, calcSrc = "network";
